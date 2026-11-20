@@ -1,3 +1,6 @@
 spring:
   application:
     name: java.advanced.reactive
+  sql:
+    init:
+      mode: always
