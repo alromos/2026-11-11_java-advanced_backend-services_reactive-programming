@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/sports"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": "[\"Football\",\"Basketball\",\"Tennis\",\"Hockey\",\"Volleyball\"]"
+  }
+}
