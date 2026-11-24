@@ -2,6 +2,7 @@ package by.alromos.java.advanced.reactive.setup;
 
 import by.alromos.java.advanced.reactive.model.Sport;
 import by.alromos.java.advanced.reactive.repository.SportRepository;
+import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -11,8 +12,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.MonoSink;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
@@ -24,6 +27,7 @@ public class Setup implements ApplicationRunner {
   private static final String SPORTS_URI = "/sports";
   private static final int MAX_RETRIES = 3;
   private static final Duration INITIAL_BACKOFF = Duration.ofMillis(500);
+  private static final int BATCH_SIZE = 2;
 
   private final WebClient webClient;
   private final SportRepository repository;
@@ -39,11 +43,12 @@ public class Setup implements ApplicationRunner {
   }
 
   Mono<Void> load() {
-    return fetchSportNames()
+    Flux<Sport> sports = fetchSportNames()
         .flatMapMany(Flux::fromArray)
         .map(name -> new Sport(null, name))
-        .concatMap(this::save)
-        .then();
+        .concatMap(this::save, 1);
+
+    return Mono.create(sink -> sports.subscribe(new BatchSubscriber(BATCH_SIZE, sink)));
   }
 
   private Mono<String[]> fetchSportNames() {
@@ -73,6 +78,48 @@ public class Setup implements ApplicationRunner {
           log.warn("Sport '{}' already exists, skipping", sport.name());
           return Mono.empty();
         });
+  }
+
+  private static final class BatchSubscriber extends BaseSubscriber<Sport> {
+
+    private final int batchSize;
+    private final MonoSink<Void> sink;
+    private int receivedInBatch;
+
+    BatchSubscriber(int batchSize, MonoSink<Void> sink) {
+      this.batchSize = batchSize;
+      this.sink = sink;
+    }
+
+    @Override
+    protected void hookOnSubscribe(Subscription subscription) {
+      log.info("onSubscribe: request({})", batchSize);
+      subscription.request(batchSize);
+    }
+
+    @Override
+    protected void hookOnNext(Sport sport) {
+      receivedInBatch++;
+      log.info("onNext ({}/{}): {}", receivedInBatch, batchSize, sport.name());
+      if (receivedInBatch == batchSize) {
+        receivedInBatch = 0;
+        log.info("Batch consumed: request({})", batchSize);
+        request(batchSize);
+      }
+    }
+
+    @Override
+    protected void hookOnComplete() {
+      log.info("onComplete");
+      sink.success();
+    }
+
+    @Override
+    protected void hookOnError(Throwable throwable) {
+      log.error("onError", throwable);
+      sink.error(throwable);
+    }
+
   }
 
 }
