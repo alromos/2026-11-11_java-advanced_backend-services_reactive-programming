@@ -19,4 +19,17 @@ class SportRepositoryTest extends BaseIntegrationTest {
         .verify();
   }
 
+  @Test
+  void findsByNameSubstringIgnoringCaseSortedByName() {
+    StepVerifier.create(repository.findByNameContainingIgnoreCaseOrderByName("BALL").map(Sport::name))
+        .expectNext("Basketball", "Football", "Volleyball")
+        .verifyComplete();
+  }
+
+  @Test
+  void findsNothingWhenNoNameMatches() {
+    StepVerifier.create(repository.findByNameContainingIgnoreCaseOrderByName("no-such-sport-xyz"))
+        .verifyComplete();
+  }
+
 }
